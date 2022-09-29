@@ -8,21 +8,18 @@ import numpy.linalg
 import scipy.io
 import numpy as np
 
-data = scipy.io.loadmat("/Users/sushmitamallick/Documents/CSE 569/train_data.mat")
-test_data = scipy.io.loadmat("/Users/sushmitamallick/Documents/CSE 569/test_data.mat")
+data = scipy.io.loadmat("train_data.mat")
+test_data = scipy.io.loadmat("test_data.mat")
 
-all_data = data["data"][0:6000]
-all_labels = data["label"][0][0:6000]
+all_data = data["data"]
+all_labels = data["label"][0]
 all_test_data = test_data["data"]
 all_test_labels = test_data["label"][0]
 
 threshold_values = [150, 200]
-# threshold_values = [150]
-"""
-g1=∑(Yi−mean(Y))^3/N) / s3
-"""
 
 
+# skewness g1=∑(Yi−mean(Y))^3/N) / s3
 def calculate_skew(arr):
     mean = np.mean(arr)
     sum_of_cubic_deviation = 0
@@ -34,6 +31,7 @@ def calculate_skew(arr):
     return numerator / denominator
 
 
+# Ratio of brighter to darker pixels ri using a threshold T
 def calculate_ratio(arr, threshold):
     greater_count = 0
     lesser_count = 0
@@ -49,15 +47,18 @@ def get_normalized_value(value, mean, std):
     return (value - mean) / std
 
 
+# mle mean is the sample mean
 def find_mle_mean(x_train):
     mle_mean = np.mean(x_train, axis=0)
     print("mle mean: ", mle_mean)
     return mle_mean
 
+
+# using the mle covariance matrix formula (please refer project report)
 def find_mle_covariance(x_train, mle_mean):
     squared_diff_sum = 0
     for x in x_train:
-        diff = np.array(x - mle_mean).reshape((2,1))  # calculate Xi - mle_mean
+        diff = np.array(x - mle_mean).reshape((2, 1))  # calculate Xi - mle_mean
         diff_transpose = np.transpose(diff)
         squared_diff = np.dot(diff, diff_transpose)
         squared_diff_sum += squared_diff
@@ -67,34 +68,37 @@ def find_mle_covariance(x_train, mle_mean):
 
 
 def get_classifier_discriminant_value(x, mean, covariance_inverse, covariance_det, prior):
-    diff = np.array(x - mean).reshape((2,1))
+    d = 2  # in our case, normal density dimension = 2
+    diff = np.array(x - mean).reshape((2, 1))
     diff_transpose = np.transpose(diff)
-    first_term = - 0.5 * diff_transpose * covariance_inverse * diff
-    second_term = - d/2 * math.log(2 * math.pi)
+    first_term = - 0.5 * np.matmul(np.matmul(diff_transpose, covariance_inverse), diff)
+    second_term = - (d / 2) * math.log(2 * math.pi)
     third_term = - 0.5 * np.log(covariance_det)
     fourth_term = math.log(prior)
     g = first_term + second_term + third_term + fourth_term
     return g
 
 
+# calculate the error rate of the optimal classifier
 def calculate_error_rate(image_data, mle_mean_3, mle_mean_7, cov_inverse_3, cov_inverse_7, cov_det_3, cov_det_7,
-                         class_3_prior, class_7_prior):
+                         prior_3, prior_7):
     pred_correct = 0
-    for idx in image_data:
+    for idx in range(len(image_data)):
         x = image_data[idx]
-        g_3 = get_classifier_discriminant_value(x, mle_mean_3, cov_inverse_3, cov_det_3, class_3_prior)
-        g_7 = get_classifier_discriminant_value(x, mle_mean_7, cov_inverse_7, cov_det_7, class_7_prior)
-        y_pred = None
-        if g3 > g7:
+        g_3 = get_classifier_discriminant_value(x, mle_mean_3, cov_inverse_3, cov_det_3, prior_3)
+        g_7 = get_classifier_discriminant_value(x, mle_mean_7, cov_inverse_7, cov_det_7, prior_7)
+        y_pred = 0
+        if g_3 > g_7:
             y_pred = 3
         else:
             y_pred = 7
         if y_pred == all_labels[idx]:
             pred_correct += 1
-    error_rate = 1 - (pred_correct / len(normalized_image_data))
+    error_rate = 1 - (pred_correct / len(image_data))
     return error_rate
 
 
+# calculating the skewness and ratio of brighter to darker pixels for each image
 def transform_image_data(all_data, t):
     transformed_data = []
     for image_data in all_data:
@@ -109,6 +113,7 @@ def transform_image_data(all_data, t):
     return transformed_data
 
 
+# normalize the data using the overall mean and standard deviation for each of the two features
 def normalize_data(transformed_data, M, S):
     M1 = M[0]
     M2 = M[1]
@@ -134,7 +139,6 @@ for t in threshold_values:
     S = np.std(transformed_image_data, axis=0)
     normalized_image_data = normalize_data(transformed_image_data, M, S)
     normalized_image_test_data = normalize_data(transformed_image_test_data, M, S)
-    # print(normalized_image_data)
 
     # separate out the training data for the two classes
     class_3_train = []
@@ -151,42 +155,33 @@ for t in threshold_values:
     covariance matrix = (please refer project report)
     '''
     print("calculating the MLE parameters for class 3")
-    mle_mean_3 = find_mle_mean(class_3_train)
-    mle_covariance_3 = find_mle_covariance(class_3_train, mle_mean)
+    class_3_mle_mean = find_mle_mean(class_3_train)
+    class_3_mle_covariance = find_mle_covariance(class_3_train, class_3_mle_mean)
 
     print("calculating the MLE parameters for class 7")
-    mle_mean_7 = find_mle_mean(class_7_train)
-    mle_covariance_7 = find_mle_covariance(class_3_train, class_7_train)
+    class_7_mle_mean = find_mle_mean(class_7_train)
+    class_7_mle_covariance = find_mle_covariance(class_7_train, class_7_mle_mean)
 
     prior_values = [[0.5, 0.5], [0.3, 0.7]]
     # calculating error rate for each set of prior values
     for priors in prior_values:
         class_3_prior = priors[0]
         class_7_prior = priors[1]
+        print("considering class 3 prior, class 7_prior: ", str(class_3_prior), str(class_7_prior))
         # calculating the discriminating function value for classes 3 and 7 on entire data
-        cov_det_3 = np.linalg.det(mle_covariance_3)
-        cov_inverse_3 = np.linalg.inv(mle_covariance_3)
-        cov_det_7 = np.linalg.det(mle_covariance_7)
-        cov_inverse_7 = np.linalg.inv(mle_covariance_7)
+        class_3_cov_det = np.linalg.det(class_3_mle_covariance)
+        class_3_cov_inverse = np.linalg.inv(class_3_mle_covariance)
+        class_7_cov_det = np.linalg.det(class_7_mle_covariance)
+        class_7_cov_inverse = np.linalg.inv(class_7_mle_covariance)
         # calculating error rate on train data
-        train_error_rate = calculate_error_rate(normalized_image_data, mle_mean_3, mle_mean_7, cov_inverse_3,
-                                                cov_inverse_7, cov_det_3, cov_det_7, class_3_prior, class_7_prior)
+        train_error_rate = calculate_error_rate(normalized_image_data, class_3_mle_mean, class_7_mle_mean,
+                                                class_3_cov_inverse, class_7_cov_inverse, class_3_cov_det,
+                                                class_7_cov_det, class_3_prior, class_7_prior)
+        # calculating error rate on test data
+        test_error_rate = calculate_error_rate(normalized_image_test_data, class_3_mle_mean, class_7_mle_mean,
+                                               class_3_cov_inverse, class_7_cov_inverse, class_3_cov_det,
+                                               class_7_cov_det, class_3_prior, class_7_prior)
+        print("training set error rate: ", train_error_rate)
+        print("test set error rate: ", test_error_rate)
 
-        test_error_rate = calculate_error_rate(normalized_image_test_data, mle_mean_3, mle_mean_7, cov_inverse_3,
-                                               cov_inverse_7, cov_det_3, cov_det_7, class_3_prior, class_7_prior)
-        print(train_error_rate)
-        print(test_error_rate)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    print("")
